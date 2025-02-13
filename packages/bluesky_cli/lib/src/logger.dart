@@ -57,6 +57,10 @@ class BskyLogger with _DelegateLogger {
     }
   }
 
+  void info(String message) {
+    stdout(AnsiStyles.blueBright('INFO: $message'));
+  }
+
   void success(String message) {
     stdout(successMessageColor(successStyle(message)));
   }

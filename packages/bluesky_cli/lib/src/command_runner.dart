@@ -90,7 +90,7 @@ FutureOr<void> entryPoint(
   if (args.contains('--version') || args.contains('-v')) {
     final logger = BskyLogger(Logger.standard());
 
-    logger.log(version);
+    logger.log('$version (custom build)');
 
     return;
   }

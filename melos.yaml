@@ -2,7 +2,7 @@ name: atproto
 
 command:
   bootstrap:
-    usePubspecOverrides: true
+    usePubspecOverrides: false
 
 packages:
   - website/**
