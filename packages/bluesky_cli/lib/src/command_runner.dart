@@ -1,6 +1,7 @@
 // Dart imports:
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 
 // Package imports:
 import 'package:args/args.dart';
@@ -33,6 +34,11 @@ class BskyCommandRunner extends CommandRunner<void> {
         'identifier',
         help: 'Handle or email address for authentication.',
         defaultsTo: Platform.environment['BLUESKY_IDENTIFIER'],
+      )
+      ..addFlag(
+        'show-session',
+        negatable: false,
+        help: 'Display the current session file contents.',
       )
       ..addOption(
         'password',
@@ -87,12 +93,23 @@ FutureOr<void> entryPoint(
   List<String> args,
   LaunchContext context,
 ) async {
+  final sessionFilePath = '${Platform.environment['HOME']}/.bsky_session.json';
+
   if (args.contains('--version') || args.contains('-v')) {
     final logger = BskyLogger(Logger.standard());
-
-    logger.log('$version (custom build)');
-
+    logger.log('$version-rsn.1 (RSNStats fork)');
     return;
+  }
+
+  // 🔹 Handle `--show-session`
+  if (args.contains('--show-session')) {
+    if (File(sessionFilePath).existsSync()) {
+      final sessionData = jsonDecode(File(sessionFilePath).readAsStringSync());
+      print(JsonEncoder.withIndent('  ').convert(sessionData)); // Pretty-print JSON
+    } else {
+      print('⚠️ No active session found at $sessionFilePath');
+    }
+    exit(0); // Exit after showing session
   }
 
   try {
@@ -105,3 +122,28 @@ FutureOr<void> entryPoint(
     rethrow;
   }
 }
+
+
+
+// FutureOr<void> entryPoint(
+//   List<String> args,
+//   LaunchContext context,
+// ) async {
+//   if (args.contains('--version') || args.contains('-v')) {
+//     final logger = BskyLogger(Logger.standard());
+
+//     logger.log('$version (custom build)');
+
+//     return;
+//   }
+
+//   try {
+//     await BskyCommandRunner().run(args);
+//   } on UsageException catch (e) {
+//     stderr.writeln(e.toString());
+//     exitCode = 1;
+//   } catch (err) {
+//     exitCode = 1;
+//     rethrow;
+//   }
+// }

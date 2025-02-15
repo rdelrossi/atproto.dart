@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:args/command_runner.dart';
 import 'package:cli_util/cli_logging.dart';
 import 'package:xrpc/xrpc.dart' as xrpc;
+import 'package:intl/intl.dart'; // Added to support displaying expiration date
 
 // Project imports:
 import '../authentication.dart';
@@ -42,13 +43,31 @@ abstract class BskyCommand extends Command<void> {
     return payload;
   }
 
-  DateTime _getTokenExpiration(String accessJwt) {
+  // DateTime _getTokenExpiration(String accessJwt) {
+  //   try {
+  //     final payloadJson = jsonDecode(_decodeJwt(accessJwt));
+  //     final expTimestamp = payloadJson['exp']; // Unix timestamp
+  //     return DateTime.fromMillisecondsSinceEpoch(expTimestamp * 1000);
+  //   } catch (e) {
+  //     throw Exception('Failed to parse token expiration: $e');
+  //   }
+  // }
+
+  DateTime? _getTokenExpiration(String jwt) {
     try {
-      final payloadJson = jsonDecode(_decodeJwt(accessJwt));
-      final expTimestamp = payloadJson['exp']; // Unix timestamp
-      return DateTime.fromMillisecondsSinceEpoch(expTimestamp * 1000);
+      final segments = jwt.split('.');
+      if (segments.length != 3) return null;
+
+      final payload = base64Url.decode(base64Url.normalize(segments[1]));
+      final payloadMap = jsonDecode(utf8.decode(payload)) as Map<String, dynamic>;
+
+      final exp = payloadMap['exp'] as int?;
+      if (exp == null) return null;
+
+      return DateTime.fromMillisecondsSinceEpoch(exp * 1000);
     } catch (e) {
-      throw Exception('Failed to parse token expiration: $e');
+      logger.error('Error decoding JWT: $e');
+      return null;
     }
   }
 
@@ -142,19 +161,46 @@ abstract class BskyCommand extends Command<void> {
     final sessionFile = File(sessionFilePath);
 
     // Check if a session file exists
+    // if (sessionFile.existsSync()) {
+    //   try {
+    //     final existingSession = jsonDecode(sessionFile.readAsStringSync());
+
+    //     if (!_isTokenExpired(existingSession['accessJwt'])) {
+    //       final expiryTime = _getTokenExpiration(existingSession['accessJwt']);
+    
+    //       logger.info('Reusing existing session from $sessionFilePath.');
+    //       _session = existingSession;
+    //       return _session;
+    //     } else {
+    //       logger.info('Session expired. Attempting to refresh...');
+    //       final refreshedSession = await _refreshSession(existingSession['refreshJwt']);
+    //       _session = refreshedSession;
+    //       _saveSession();
+    //       return refreshedSession;
+    //     }
+    //   } catch (e) {
+    //     logger.error('Failed to read or parse existing session: $e');
+    //   }
+    // }
+  
     if (sessionFile.existsSync()) {
       try {
         final existingSession = jsonDecode(sessionFile.readAsStringSync());
 
         if (!_isTokenExpired(existingSession['accessJwt'])) {
           final expiryTime = _getTokenExpiration(existingSession['accessJwt']);
-    
-          logger.info('Reusing existing session from $sessionFilePath.');
+          final formattedExpiryTime = expiryTime != null
+              ? DateFormat('yyyy-MM-dd HH:mm:ss').format(expiryTime)
+              : 'Unknown';
+
+          logger.info(
+              'Reusing existing session from $sessionFilePath. Expires: $formattedExpiryTime');
           _session = existingSession;
           return _session;
         } else {
           logger.info('Session expired. Attempting to refresh...');
-          final refreshedSession = await _refreshSession(existingSession['refreshJwt']);
+          final refreshedSession =
+              await _refreshSession(existingSession['refreshJwt']);
           _session = refreshedSession;
           _saveSession();
           return refreshedSession;
@@ -188,9 +234,29 @@ abstract class BskyCommand extends Command<void> {
           throw Exception('Invalid session response.');
         }
 
+
+
+
+        // Decode the JWT to get expiration
+        final jwt = newSession['accessJwt'];
+        final parts = jwt.split('.');
+        if (parts.length != 3) {
+          throw Exception('Invalid JWT format');
+        }
+
+        // Decode the payload (middle part of JWT)
+        final payload = json.decode(
+          utf8.decode(base64Url.decode(base64Url.normalize(parts[1])))
+        );
+        
+        // Convert exp timestamp to DateTime
+        final expiration = DateTime.fromMillisecondsSinceEpoch(payload['exp'] * 1000);
+
+
+
         _session = newSession;
         _saveSession();
-        logger.info('✅ New session created and saved successfully!');
+        logger.info('✅ New session created and saved successfully. Expires: ${expiration.toLocal()}');
         return _session;
 
       } catch (e) {
