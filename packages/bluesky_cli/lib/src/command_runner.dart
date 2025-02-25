@@ -11,29 +11,48 @@ import 'package:cli_util/cli_logging.dart';
 
 // Project imports:
 import './version.g.dart';
-import 'command/commands.dart';
+import 'command/commands.dart';  // ✅ Import all command modules
 import 'logger.dart';
+import 'session_manager.dart';
+
+import 'command/bsky_command.dart';
+
+/// Helper function to determine session file path dynamically
+String getSessionFilePath(String account) {
+  final homeDir = Platform.environment['HOME'];
+  return account == 'main'
+      ? '$homeDir/.bsky_session_main.json'
+      : '$homeDir/.bsky_session_live.json';
+}
 
 /// A class that can run Bsky commands.
-///
-/// To run a command, do:
-///
-/// ```dart
-/// final bsky = BskyCommandRunner();
-///
-/// await bsky.run(['show-timeline']);
-/// ```
 class BskyCommandRunner extends CommandRunner<void> {
   BskyCommandRunner()
       : super(
           'bsky',
           "A useful and powerful CLI tool to use Bluesky Social's APIs.",
         ) {
+    _addGlobalOptions();
+    _registerCommands();  // ✅ Register all Bluesky commands
+  }
+
+  void _addGlobalOptions() {
     argParser
       ..addOption(
         'identifier',
         help: 'Handle or email address for authentication.',
         defaultsTo: Platform.environment['BLUESKY_IDENTIFIER'],
+      )
+      ..addFlag(
+        'version',
+        negatable: false,
+        help: 'Display the current version of the bsky CLI tool.',
+      )
+      ..addOption(
+        'account',
+        help: 'Choose which account to use (live or main)',
+        allowed: ['live', 'main'],
+        defaultsTo: 'live',
       )
       ..addFlag(
         'show-session',
@@ -47,8 +66,7 @@ class BskyCommandRunner extends CommandRunner<void> {
       )
       ..addOption(
         'service',
-        help: 'Name of the service sending the request. '
-            'Defaults to "bsky.social".',
+        help: 'Name of the service sending the request. Defaults to "bsky.social".',
         defaultsTo: null,
       )
       ..addFlag(
@@ -71,7 +89,10 @@ class BskyCommandRunner extends CommandRunner<void> {
         negatable: false,
         help: 'Enable verbose logging.',
       );
+  }
 
+  /// ✅ Register Bluesky Commands
+  void _registerCommands() {
     for (final command in [
       ...commonCommands,
       ...actorCommands,
@@ -85,35 +106,59 @@ class BskyCommandRunner extends CommandRunner<void> {
   }
 
   @override
-  Future<void> runCommand(ArgResults topLevelResults) async =>
-      await super.runCommand(topLevelResults);
+  Future<void> runCommand(ArgResults topLevelResults) async {
+    final logger = BskyLogger(Logger.standard());
+
+    // Set the session file based on the account
+    final account = topLevelResults['account'] as String? ?? 'live';
+    SessionManager.setSessionFilePath(account);
+
+    // Set environment variables indirectly by creating local variables
+    final identifier = account == 'main'
+        ? Platform.environment['BLUESKY_MAIN_IDENTIFIER'] ?? ''
+        : Platform.environment['BLUESKY_LIVE_IDENTIFIER'] ?? '';
+
+    final password = account == 'main'
+        ? Platform.environment['BLUESKY_MAIN_PASSWORD'] ?? ''
+        : Platform.environment['BLUESKY_LIVE_PASSWORD'] ?? '';
+
+    // Pass these credentials dynamically to authentication (inside BskyCommand)
+    BskyCommand.customIdentifier = identifier;
+    BskyCommand.customPassword = password;
+
+    // Handle --version
+    if (topLevelResults['version'] == true) {
+      logger.log('$version-rsn.3 (RSNStats fork)');
+      return;
+    }
+
+    // Handle --show-session
+    if (topLevelResults['show-session'] == true) {
+      if (File(SessionManager.sessionFilePath).existsSync()) {
+        final sessionData =
+            jsonDecode(File(SessionManager.sessionFilePath).readAsStringSync());
+        print(JsonEncoder.withIndent('  ').convert(sessionData)); // Pretty-print JSON
+      } else {
+        print(
+            '⚠️ No active session found for $account at ${SessionManager.sessionFilePath}');
+      }
+      exit(0);
+    }
+
+    // Run the actual command
+    await super.runCommand(topLevelResults);
+  }
 }
 
+/// Entry point for executing commands
 FutureOr<void> entryPoint(
-  List<String> args,
-  LaunchContext context,
-) async {
-  final sessionFilePath = '${Platform.environment['HOME']}/.bsky_session.json';
-
-  if (args.contains('--version') || args.contains('-v')) {
-    final logger = BskyLogger(Logger.standard());
-    logger.log('$version-rsn.1 (RSNStats fork)');
-    return;
-  }
-
-  // 🔹 Handle `--show-session`
-  if (args.contains('--show-session')) {
-    if (File(sessionFilePath).existsSync()) {
-      final sessionData = jsonDecode(File(sessionFilePath).readAsStringSync());
-      print(JsonEncoder.withIndent('  ').convert(sessionData)); // Pretty-print JSON
-    } else {
-      print('⚠️ No active session found at $sessionFilePath');
-    }
-    exit(0); // Exit after showing session
-  }
+  List<String> args, [
+  LaunchContext? context, // ✅ Correct placement of brackets
+]) async {
+  final runner = BskyCommandRunner();
 
   try {
-    await BskyCommandRunner().run(args);
+    await runner.run(args);
   } on UsageException catch (e) {
     stderr.writeln(e.toString());
     exitCode = 1;
@@ -122,28 +167,3 @@ FutureOr<void> entryPoint(
     rethrow;
   }
 }
-
-
-
-// FutureOr<void> entryPoint(
-//   List<String> args,
-//   LaunchContext context,
-// ) async {
-//   if (args.contains('--version') || args.contains('-v')) {
-//     final logger = BskyLogger(Logger.standard());
-
-//     logger.log('$version (custom build)');
-
-//     return;
-//   }
-
-//   try {
-//     await BskyCommandRunner().run(args);
-//   } on UsageException catch (e) {
-//     stderr.writeln(e.toString());
-//     exitCode = 1;
-//   } catch (err) {
-//     exitCode = 1;
-//     rethrow;
-//   }
-// }

@@ -72,6 +72,8 @@ class PostCommand extends CreateRecordCommand {
 
   @override
   FutureOr<Map<String, dynamic>> get record async {
+    await refreshSessionIfNeeded();  // 🔥 Add this to ensure correct session
+
     final text = BlueskyText(argResults!['text']);
     final entities = text.entities;
 
@@ -174,6 +176,8 @@ class PostCommand extends CreateRecordCommand {
       return const [];
     }
 
+    await refreshSessionIfNeeded();  // Ensure the right session is active
+
     final images = <Map<String, dynamic>>[];
     for (final image in argResults!['images'].split(',')) {
       final uploaded = await upload(File(image));
@@ -192,6 +196,8 @@ class PostCommand extends CreateRecordCommand {
   Future<Map<String, dynamic>> _getPost(
     final AtUri uri,
   ) async {
+    await refreshSessionIfNeeded();  // Ensure correct session
+
     final response = await xrpc.query<Map<String, dynamic>>(
       xrpc.NSID.create(
         'feed.bsky.app',
@@ -208,3 +214,4 @@ class PostCommand extends CreateRecordCommand {
     return response.data['posts'].first;
   }
 }
+

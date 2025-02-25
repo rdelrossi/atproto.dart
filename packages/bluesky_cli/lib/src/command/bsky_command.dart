@@ -13,11 +13,16 @@ import 'package:intl/intl.dart'; // Added to support displaying expiration date
 import '../authentication.dart';
 import '../logger.dart';
 
-final String sessionFilePath = '${Platform.environment['HOME']}/.bsky_session.json';
+import '../session_manager.dart';
+
+bool _sessionRefreshed = false; // Prevent double-refreshing in a single command
 
 abstract class BskyCommand extends Command<void> {
   /// Returns the new instance of [BskyCommand].
   BskyCommand();
+
+  static String customIdentifier = '';
+  static String customPassword = '';
 
   /// The logger
   late final logger = BskyLogger(globalResults!['verbose']! as bool
@@ -28,8 +33,8 @@ abstract class BskyCommand extends Command<void> {
 
   /// The authentication.
   late final _auth = Authentication(
-    globalResults!['identifier'],
-    globalResults!['password'],
+    customIdentifier.isNotEmpty ? customIdentifier : globalResults!['identifier'],
+    customPassword.isNotEmpty ? customPassword : globalResults!['password'],
   );
 
   Map<String, dynamic> _session = {};
@@ -92,27 +97,53 @@ abstract class BskyCommand extends Command<void> {
 
   void _saveSession() {
     try {
-      final file = File(sessionFilePath);
+      final file = File(SessionManager.sessionFilePath);
       file.writeAsStringSync(jsonEncode(_session));
-      logger.info('Session saved to $sessionFilePath.');
+      logger.info('✅ Session saved to ${SessionManager.sessionFilePath}');
     } catch (e) {
-      logger.error('Failed to save session: $e');
+      logger.error('❌ Failed to save session: $e');
+    }
+  }
+
+  void _loadSession() {
+    try {
+      final sessionFile = File(SessionManager.sessionFilePath);
+      if (sessionFile.existsSync()) {
+        _session = jsonDecode(sessionFile.readAsStringSync());
+        logger.info('Loaded session from ${SessionManager.sessionFilePath}');
+      } else {
+        logger.info('No existing session found. A new session will be created.');
+      }
+    } catch (e) {
+      logger.error('Failed to load session: $e');
+    }
+  }
+
+  Future<void> refreshSessionIfNeeded() async {
+    if (_sessionRefreshed) return; // Skip if already refreshed
+    if (_session.isNotEmpty && _isTokenExpired(_session['accessJwt'])) {
+      logger.info('🔄 Expired session detected. Refreshing...');
+      _session = await _refreshSession(_session['refreshJwt']);
+      _saveSession();
+      _sessionRefreshed = true;
+    } else {
+      logger.info('✅ Loaded session from ${SessionManager.sessionFilePath}');
     }
   }
 
   /// Returns the authenticated access token.
   Future<String> get accessJwt async {
-    if (_session.isNotEmpty) {
-      if (_isTokenExpired(_session['accessJwt'])) {
-        logger.info('Access token expired, attempting to refresh session.');
-        _session = await _refreshSession(_session['refreshJwt']);
-      }
-      return _session['accessJwt'];
+    _loadSession();  // ✅ Load the session before checking for expiration
+
+    if (_session.isEmpty) {
+      // If no session exists, create a new one
+      final session = await _createSession();
+      return session['accessJwt'];
     }
 
-    // If no session exists, create a new one
-    final session = await _createSession();
-    return session['accessJwt'];
+    // Refresh session only if necessary
+    await refreshSessionIfNeeded();
+    return _session['accessJwt'];
   }
 
   /// Returns the authenticated DID.
@@ -158,7 +189,7 @@ abstract class BskyCommand extends Command<void> {
   }
 
   Future<Map<String, dynamic>> _createSession() async {
-    final sessionFile = File(sessionFilePath);
+    final sessionFile = File(SessionManager.sessionFilePath);
 
     // Check if a session file exists
     // if (sessionFile.existsSync()) {
@@ -194,7 +225,7 @@ abstract class BskyCommand extends Command<void> {
               : 'Unknown';
 
           logger.info(
-              'Reusing existing session from $sessionFilePath. Expires: $formattedExpiryTime');
+              'Reusing existing session from ${SessionManager.sessionFilePath}. Expires: $formattedExpiryTime');
           _session = existingSession;
           return _session;
         } else {
@@ -233,9 +264,6 @@ abstract class BskyCommand extends Command<void> {
           logger.error('❌ Missing accessJwt or refreshJwt in session response.');
           throw Exception('Invalid session response.');
         }
-
-
-
 
         // Decode the JWT to get expiration
         final jwt = newSession['accessJwt'];
