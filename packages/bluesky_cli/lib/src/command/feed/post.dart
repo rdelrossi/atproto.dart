@@ -72,62 +72,62 @@ class PostCommand extends CreateRecordCommand {
 
   @override
   FutureOr<Map<String, dynamic>> get record async {
-    await refreshSessionIfNeeded();  // 🔥 Add this to ensure correct session
+      await refreshSessionIfNeeded();  // 🔥 Ensure correct session
 
-    final text = BlueskyText(argResults!['text']);
-    final entities = text.entities;
+      final rawText = argResults!['text'];  // ✅ Keep unaltered text
+      final parsedText = BlueskyText(rawText);  // ✅ Process text for entities
 
-    final record = {
-      'text': text.value,
-      'facets': await entities.toFacets(service: service),
-      'createdAt': argResults!['created-at'],
-    };
-
-    if (argResults!['reply'] != null) {
-      final post = await _getPost(AtUri.parse(argResults!['reply']));
-
-      record['reply'] = {
-        'root': {
-          'uri': post['uri'],
-          'cid': post['cid'],
-        },
-        'parent': {
-          'uri': post['uri'],
-          'cid': post['cid'],
-        },
+      final record = {
+        'text': rawText,  // ✅ Use original text
+        'facets': await parsedText.entities.toFacets(service: service),  // ✅ Extract facets
+        'createdAt': argResults!['created-at'],
       };
-    }
 
-    final images = await _uploadImages();
-    if (images.isNotEmpty) {
-      record['embed'] = {
-        r'$type': 'app.bsky.embed.images',
-        'images': images,
-      };
-    } else {
-      if (text.isEmpty) {
-        throw ArgumentError(
-          'text must not be empty when embed is null.',
-        );
+      if (argResults!['reply'] != null) {
+        final post = await _getPost(AtUri.parse(argResults!['reply']));
+
+        record['reply'] = {
+          'root': {
+            'uri': post['uri'],
+            'cid': post['cid'],
+          },
+          'parent': {
+            'uri': post['uri'],
+            'cid': post['cid'],
+          },
+        };
       }
-    }
 
-    final langs = _langs;
-    if (langs != null) {
-      record['langs'] = langs;
-    }
+      final images = await _uploadImages();
+      if (images.isNotEmpty) {
+        record['embed'] = {
+          r'$type': 'app.bsky.embed.images',
+          'images': images,
+        };
+      } else {
+        if (rawText.isEmpty) {  // ✅ Use `rawText`, since `text` is removed
+          throw ArgumentError(
+            'text must not be empty when embed is null.',
+          );
+        }
+      }
 
-    final labels = _labels;
-    if (labels != null) {
-      record['labels'] = labels;
-    }
+      final langs = _langs;
+      if (langs != null) {
+        record['langs'] = langs;
+      }
 
-    final tags = _tags;
-    if (tags != null) {
-      record['tags'] = tags;
-    }
+      final labels = _labels;
+      if (labels != null) {
+        record['labels'] = labels;
+      }
 
-    return record;
+      final tags = _tags;
+      if (tags != null) {
+        record['tags'] = tags;
+      }
+
+      return record;
   }
 
   List<String>? get _langs {
