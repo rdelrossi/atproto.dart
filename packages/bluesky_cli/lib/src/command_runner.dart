@@ -128,7 +128,7 @@ class BskyCommandRunner extends CommandRunner<void> {
 
     // Handle --version
     if (topLevelResults['version'] == true) {
-      logger.log('$version-rsn.4a (RSNStats fork)');
+      logger.log('$version-rsn.5 (RSNStats fork)');
       return;
     }
 
