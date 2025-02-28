@@ -177,7 +177,9 @@ class PostCommand extends CreateRecordCommand {
           record['tags'] = tags;
       }
 
-      print('🛠️ DEBUG: Final record structure -> ${jsonEncode(record)}');
+      if (globalResults?['debug'] as bool? ?? false) {
+        print('🛠️ DEBUG: Final record structure -> ${jsonEncode(record)}');
+      }
 
       return record;
   }
@@ -270,7 +272,9 @@ class PostCommand extends CreateRecordCommand {
   }
 
   Future<Map<String, dynamic>?> uploadImageToBluesky(String imageUrl) async {
-      print('🛠️ DEBUG: Downloading image from URL -> $imageUrl');
+      if (globalResults?['debug'] as bool? ?? false) {
+        print('🛠️ DEBUG: Downloading image from URL -> $imageUrl');
+      }
 
       try {
           // Fetch the image
@@ -285,12 +289,16 @@ class PostCommand extends CreateRecordCommand {
           final tempFile = File('${tempDir.path}/bluesky_upload.jpg');
           await tempFile.writeAsBytes(response.bodyBytes);
 
-          print('🛠️ DEBUG: Uploading image from local file -> ${tempFile.path}');
+          if (globalResults?['debug'] as bool? ?? false) {
+            print('🛠️ DEBUG: Uploading image from local file -> ${tempFile.path}');
+          }
 
           // Upload using Bluesky API
           final uploaded = await upload(tempFile);
           
-          print('🛠️ DEBUG: Upload Response -> ${uploaded.data}');
+          if (globalResults?['debug'] as bool? ?? false) {
+            print('🛠️ DEBUG: Upload Response -> ${uploaded.data}');
+          }
           
           // Return the complete response
           return jsonDecode(uploaded.data);

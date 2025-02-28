@@ -1,18 +1,14 @@
-// Dart imports:
 import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 
-// Package imports:
 import 'package:args/command_runner.dart';
 import 'package:cli_util/cli_logging.dart';
 import 'package:xrpc/xrpc.dart' as xrpc;
-import 'package:intl/intl.dart'; // Added to support displaying expiration date
+import 'package:intl/intl.dart';
 
-// Project imports:
 import '../authentication.dart';
 import '../logger.dart';
-
 import '../session_manager.dart';
 
 bool _sessionRefreshed = false; // Prevent double-refreshing in a single command
@@ -30,6 +26,9 @@ abstract class BskyCommand extends Command<void> {
       : Logger.standard());
 
   late final service = globalResults!['service'] as String?;
+  
+  // Add debug flag shortcut for cleaner code
+  bool get isDebugMode => globalResults?['debug'] as bool? ?? false;
 
   /// The authentication.
   late final _auth = Authentication(
@@ -38,6 +37,8 @@ abstract class BskyCommand extends Command<void> {
   );
 
   Map<String, dynamic> _session = {};
+  bool _sessionLoaded = false; // Track if session has been loaded already
+  bool _sessionValidated = false; // Track if session has been validated already
 
   String _decodeJwt(String token) {
     final parts = token.split('.');
@@ -47,16 +48,6 @@ abstract class BskyCommand extends Command<void> {
     final payload = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
     return payload;
   }
-
-  // DateTime _getTokenExpiration(String accessJwt) {
-  //   try {
-  //     final payloadJson = jsonDecode(_decodeJwt(accessJwt));
-  //     final expTimestamp = payloadJson['exp']; // Unix timestamp
-  //     return DateTime.fromMillisecondsSinceEpoch(expTimestamp * 1000);
-  //   } catch (e) {
-  //     throw Exception('Failed to parse token expiration: $e');
-  //   }
-  // }
 
   DateTime? _getTokenExpiration(String jwt) {
     try {
@@ -99,20 +90,28 @@ abstract class BskyCommand extends Command<void> {
     try {
       final file = File(SessionManager.sessionFilePath);
       file.writeAsStringSync(jsonEncode(_session));
-      logger.info('✅ Session saved to ${SessionManager.sessionFilePath}');
+      if (isDebugMode) {
+        logger.info('✅ Session saved to ${SessionManager.sessionFilePath}');
+      }
     } catch (e) {
       logger.error('❌ Failed to save session: $e');
     }
   }
 
   void _loadSession() {
+    // Skip if already loaded during this command execution
+    if (_sessionLoaded) return;
+    
     try {
       final sessionFile = File(SessionManager.sessionFilePath);
       if (sessionFile.existsSync()) {
         _session = jsonDecode(sessionFile.readAsStringSync());
         logger.info('Loaded session from ${SessionManager.sessionFilePath}');
+        _sessionLoaded = true;
       } else {
-        logger.info('No existing session found. A new session will be created.');
+        if (isDebugMode) {
+          logger.info('No existing session found. A new session will be created.');
+        }
       }
     } catch (e) {
       logger.error('Failed to load session: $e');
@@ -120,20 +119,25 @@ abstract class BskyCommand extends Command<void> {
   }
 
   Future<void> refreshSessionIfNeeded() async {
-    if (_sessionRefreshed) return; // Skip if already refreshed
+    // Skip if already validated or refreshed
+    if (_sessionValidated || _sessionRefreshed) return;
+    
+    _sessionValidated = true; // Mark as validated to prevent duplicate checks
+    
     if (_session.isNotEmpty && _isTokenExpired(_session['accessJwt'])) {
       logger.info('🔄 Expired session detected. Refreshing...');
       _session = await _refreshSession(_session['refreshJwt']);
       _saveSession();
       _sessionRefreshed = true;
-    } else {
-      logger.info('✅ Loaded session from ${SessionManager.sessionFilePath}');
+    } else if (isDebugMode) {
+      // Only log in debug mode to avoid duplicate messages
+      logger.info('✅ Session is valid');
     }
   }
 
   /// Returns the authenticated access token.
   Future<String> get accessJwt async {
-    _loadSession();  // ✅ Load the session before checking for expiration
+    _loadSession();  // Load the session before checking for expiration
 
     if (_session.isEmpty) {
       // If no session exists, create a new one
@@ -158,7 +162,9 @@ abstract class BskyCommand extends Command<void> {
   }
 
   Future<Map<String, dynamic>> _refreshSession(String refreshToken) async {
-    logger.info('Attempting to refresh session...');
+    if (isDebugMode) {
+      logger.info('Attempting to refresh session...');
+    }
 
     final response = await xrpc.procedure<String>(
       xrpc.NSID.create('server.atproto.com', 'refreshSession'),
@@ -168,7 +174,9 @@ abstract class BskyCommand extends Command<void> {
       },
     );
 
-    logger.info('Raw response: ${response.data}'); // Debugging output
+    if (isDebugMode) {
+      logger.info('Raw response: ${response.data}'); // Debugging output
+    }
 
     try {
       // Ensure response is valid
@@ -191,29 +199,6 @@ abstract class BskyCommand extends Command<void> {
   Future<Map<String, dynamic>> _createSession() async {
     final sessionFile = File(SessionManager.sessionFilePath);
 
-    // Check if a session file exists
-    // if (sessionFile.existsSync()) {
-    //   try {
-    //     final existingSession = jsonDecode(sessionFile.readAsStringSync());
-
-    //     if (!_isTokenExpired(existingSession['accessJwt'])) {
-    //       final expiryTime = _getTokenExpiration(existingSession['accessJwt']);
-    
-    //       logger.info('Reusing existing session from $sessionFilePath.');
-    //       _session = existingSession;
-    //       return _session;
-    //     } else {
-    //       logger.info('Session expired. Attempting to refresh...');
-    //       final refreshedSession = await _refreshSession(existingSession['refreshJwt']);
-    //       _session = refreshedSession;
-    //       _saveSession();
-    //       return refreshedSession;
-    //     }
-    //   } catch (e) {
-    //     logger.error('Failed to read or parse existing session: $e');
-    //   }
-    // }
-  
     if (sessionFile.existsSync()) {
       try {
         final existingSession = jsonDecode(sessionFile.readAsStringSync());
@@ -279,8 +264,6 @@ abstract class BskyCommand extends Command<void> {
         
         // Convert exp timestamp to DateTime
         final expiration = DateTime.fromMillisecondsSinceEpoch(payload['exp'] * 1000);
-
-
 
         _session = newSession;
         _saveSession();

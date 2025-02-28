@@ -44,6 +44,11 @@ class BskyCommandRunner extends CommandRunner<void> {
         defaultsTo: Platform.environment['BLUESKY_IDENTIFIER'],
       )
       ..addFlag(
+       'debug',
+        negatable: false,
+        help: 'Enable detailed debug output.',
+      )
+      ..addFlag(
         'version',
         negatable: false,
         help: 'Display the current version of the bsky CLI tool.',
@@ -128,7 +133,7 @@ class BskyCommandRunner extends CommandRunner<void> {
 
     // Handle --version
     if (topLevelResults['version'] == true) {
-      logger.log('$version-rsn.5 (RSNStats fork)');
+      logger.log('$version-rsn.6 (RSNStats fork)');
       return;
     }
 
