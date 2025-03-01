@@ -140,12 +140,17 @@ class BskyCommandRunner extends CommandRunner<void> {
     // Handle --show-session
     if (topLevelResults['show-session'] == true) {
       if (File(SessionManager.sessionFilePath).existsSync()) {
-        final sessionData =
-            jsonDecode(File(SessionManager.sessionFilePath).readAsStringSync());
-        print(JsonEncoder.withIndent('  ').convert(sessionData)); // Pretty-print JSON
+        final sessionData = jsonDecode(File(SessionManager.sessionFilePath).readAsStringSync());
+
+        // Get expiration time from SessionManager
+        final String expirationTime = SessionManager.getSessionExpiration();
+
+        // Print formatted session data
+        print(JsonEncoder.withIndent('  ').convert(sessionData));
+        print('\n⏳ Session Expires: $expirationTime');
+
       } else {
-        print(
-            '⚠️ No active session found for $account at ${SessionManager.sessionFilePath}');
+        print('⚠️ No active session found for $account at ${SessionManager.sessionFilePath}');
       }
       exit(0);
     }
