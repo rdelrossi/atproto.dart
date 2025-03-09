@@ -106,7 +106,9 @@ abstract class BskyCommand extends Command<void> {
       final sessionFile = File(SessionManager.sessionFilePath);
       if (sessionFile.existsSync()) {
         _session = jsonDecode(sessionFile.readAsStringSync());
-        logger.info('Loaded session from ${SessionManager.sessionFilePath}');
+        if (isDebugMode) {
+          logger.info('Loaded session from ${SessionManager.sessionFilePath}');
+        }
         _sessionLoaded = true;
       } else {
         if (isDebugMode) {
@@ -185,7 +187,9 @@ abstract class BskyCommand extends Command<void> {
       if (refreshedSession.containsKey('accessJwt') && refreshedSession.containsKey('refreshJwt')) {
         _session = refreshedSession;
         _saveSession();  // Save updated session with new JWTs
-        logger.info('Session refreshed successfully.');
+        if (isDebugMode) {
+          logger.info('Session refreshed successfully.');
+        }
         return refreshedSession;
       } else {
         throw Exception('Missing required fields in session response.');
