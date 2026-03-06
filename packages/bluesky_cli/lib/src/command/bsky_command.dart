@@ -128,8 +128,14 @@ abstract class BskyCommand extends Command<void> {
     
     if (_session.isNotEmpty && _isTokenExpired(_session['accessJwt'])) {
       logger.info('🔄 Expired session detected. Refreshing...');
-      _session = await _refreshSession(_session['refreshJwt']);
-      _saveSession();
+      try {
+        _session = await _refreshSession(_session['refreshJwt']);
+        _saveSession();
+      } catch (e) {
+        logger.error('⚠️ Session refresh failed: $e');
+        logger.info('🔐 Falling back to createSession...');
+        _session = await _createSession();
+      }
       _sessionRefreshed = true;
     } else if (isDebugMode) {
       // Only log in debug mode to avoid duplicate messages
